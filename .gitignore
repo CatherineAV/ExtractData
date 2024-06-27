@@ -1,0 +1,8 @@
+.vscode/
+.idea/
+
+venv/
+
+logs/
+*.log
+*.tmp
