@@ -153,8 +153,12 @@ def get_formatted_data(table: list[list], match_conditions: str, match_type: str
     for i, row in enumerate(updated_table):
         replace_values = new_table[i]
         for value in replace_values:
+            if float(value) >= 1000:
+                value = str(float(value) / 1000000).replace('.', ',') + ' мкФ'
+            else:
+                value = value.replace('.', ',') + ' пФ'
             new_row = row[:]
-            new_row[1] = value + ' пФ'
+            new_row[1] = value
             formatted_data.append(new_row[:])
 
     formatted_data = [[match_type, match_conditions] + row for row in formatted_data]
