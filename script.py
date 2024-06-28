@@ -163,7 +163,7 @@ def get_formatted_data(*, table: list[list], match_conditions: str, match_type: 
     return formatted_data
 
 
-def save_tables_to_excel(*, tables_to_excel: list[list], path: str):
+def save_tables_to_excel(*, tables_to_excel: list[list], path: str) -> None:
 
     with pd.ExcelWriter(path, engine='openpyxl') as writer:
         df = pd.DataFrame(tables_to_excel, columns=[
