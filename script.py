@@ -2,9 +2,10 @@ import re
 import pdfplumber
 import pandas as pd
 import os
+import argparse
 
 
-def fill_cells(*, table: list[list]) -> list[list]:
+def fill_cells(table: list[list]) -> list[list]:
 
     num_rows = len(table)
     num_cols = len(table[0])
@@ -19,7 +20,7 @@ def fill_cells(*, table: list[list]) -> list[list]:
     return table
 
 
-def find_patterns(*, text: str) -> [str, str]:
+def find_patterns(text: str) -> [str, str]:
 
     pattern_conditions = r'\b[А-ЯЁ]{4}\.\d+\.\d+\sТУ\b'
     pattern_type = r'\b[А-ЯЁ]\d+\-\d+\b'
@@ -30,22 +31,22 @@ def find_patterns(*, text: str) -> [str, str]:
             match_type.group() if match_type else None)
 
 
-def get_data_from_pdf(*, path: str) -> [list[list], str, str]:
+def get_data_from_pdf(path: str) -> [list[list], str, str]:
 
     tables_from_pdf = []
 
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
-            match_conditions, match_type = find_patterns(text=page.extract_text())
+            match_conditions, match_type = find_patterns(page.extract_text())
             extracted_tables = page.extract_tables()
             for table in extracted_tables:
-                table = fill_cells(table=table)
+                table = fill_cells(table)
                 tables_from_pdf.append(table)
 
     return tables_from_pdf, match_conditions, match_type
 
 
-def cell_split(*, cell: str) -> [list, bool]:
+def split_cell(cell: str) -> [list, bool]:
     gap = False
     if '…' in cell or ';' in cell:
         value = re.split(r'[…;]', cell)
@@ -55,11 +56,11 @@ def cell_split(*, cell: str) -> [list, bool]:
     return value, gap
 
 
-def format_number(*, value: float) -> str:
+def format_number(value: float) -> str:
     return f"{value:.2f}".rstrip('0').rstrip('.') if value % 1 != 0 else f"{value:.0f}"
 
 
-def get_e24_values_in_range(*, min_value: str, max_value: str) -> list:
+def get_e24_values_in_range(min_value: str, max_value: str) -> list:
 
     e24_values = [
         10, 11, 12, 13, 15, 16, 18, 20, 22, 24,
@@ -76,11 +77,11 @@ def get_e24_values_in_range(*, min_value: str, max_value: str) -> list:
         for value in e24_values:
             e24_value = value * factor
             if float(min_value) <= e24_value <= float(max_value):
-                results.append(format_number(value=e24_value))
+                results.append(format_number(e24_value))
     return results
 
 
-def get_e6_values_in_range(*, min_value: str, max_value: str) -> list:
+def get_e6_values_in_range(min_value: str, max_value: str) -> list:
 
     e6_values = [10, 15, 22, 33, 47, 68]
     results = []
@@ -92,12 +93,12 @@ def get_e6_values_in_range(*, min_value: str, max_value: str) -> list:
         e6_value = value
         while e6_value <= float(max_value):
             if e6_value >= float(min_value):
-                results.append(format_number(value=e6_value))
+                results.append(format_number(e6_value))
             e6_value *= 10
     return results
 
 
-def parsing_data(*, table: list[list]) -> list[list]:
+def parse_data(table: list[list]) -> list[list]:
 
     new_list = []
     pattern_for_pf = r'^[\d.,\s\W]*[пФ]*[\d.,\s\W]*$'
@@ -106,7 +107,7 @@ def parsing_data(*, table: list[list]) -> list[list]:
 
     for tbl in table[1:]:
         for row in tbl[3:len(tbl) - 1]:
-            items, is_gap = cell_split(cell=row[1])
+            items, is_gap = split_cell(row[1])
             for i in range(len(items)):
                 cleaned_data = ''.join(filter(lambda x: x.isdigit() or x in ',', items[i])).replace(',', '.')
                 if cleaned_data.count('.') > 1:
@@ -131,25 +132,25 @@ def parsing_data(*, table: list[list]) -> list[list]:
     return new_list
 
 
-def get_formatted_data(*, table: list[list], match_conditions: str, match_type: str) -> list[list]:
+def get_formatted_data(table: list[list], match_conditions: str, match_type: str) -> list[list]:
 
-    new_table = parsing_data(table=table)
-    update_table = []
+    new_table = parse_data(table)
+    updated_table = []
     formatted_data = []
 
     for tbl in table[1:]:
         for row in tbl[3:]:
             if row[0].isdigit():
                 formatted_row = [row[0] + ' В', row[1], tbl[0][0], row[3], row[4], row[5], row[6]]
-                update_table.append(formatted_row)
+                updated_table.append(formatted_row)
 
-    for row in update_table:
+    for row in updated_table:
         if row[2] == 'МП0':
             row.insert(2, '±5%')
         elif row[2] == 'Н30' or row[2] == 'H90':
             row.insert(2, '±20%')
 
-    for i, row in enumerate(update_table):
+    for i, row in enumerate(updated_table):
         replace_values = new_table[i]
         for value in replace_values:
             new_row = row[:]
@@ -163,7 +164,7 @@ def get_formatted_data(*, table: list[list], match_conditions: str, match_type: 
     return formatted_data
 
 
-def save_tables_to_excel(*, tables_to_excel: list[list], path: str) -> None:
+def save_tables_to_excel(tables_to_excel: list[list], path: str) -> None:
 
     with pd.ExcelWriter(path, engine='openpyxl') as writer:
         df = pd.DataFrame(tables_to_excel, columns=[
@@ -171,18 +172,22 @@ def save_tables_to_excel(*, tables_to_excel: list[list], path: str) -> None:
         df.to_excel(writer, sheet_name=f"Конденсаторы", index=False)
 
 
+def run():
+    parser = argparse.ArgumentParser(description="Обработка PDF-файла и вывод данных в Excel-таблицу")
+    parser.add_argument('-in', '--input', type=str, required=True, help="Путь к входному файлу PDF")
+    parser.add_argument('-out', '--output', type=str, default='output_data.xlsx', help="Имя выходного файла Excel")
+
+    args = parser.parse_args()
+
+    pdf_path = args.input
+    excel_path = os.path.join(os.getcwd(), args.output)
+
+    tables, conditions, capacitor_type = get_data_from_pdf(pdf_path)
+    data = get_formatted_data(tables, conditions, capacitor_type)
+    save_tables_to_excel(data, excel_path)
+    print(f"Таблица сохранена по пути {excel_path}")
+
+
 if __name__ == "__main__":
 
-    pdf_path = input("Путь к файлу: ")
-    excel_path = os.path.join(os.getcwd(), 'output_data.xlsx')
-
-    try:
-        tables, conditions, capacitor_type = get_data_from_pdf(path=pdf_path)
-        data = get_formatted_data(table=tables, match_type=capacitor_type, match_conditions=conditions)
-        save_tables_to_excel(tables_to_excel=data, path=excel_path)
-    except FileNotFoundError:
-        print("Неверный путь к файлу")
-    except PermissionError:
-        print("Невозможно перезаписать файл, так как он используется")
-    else:
-        print(f"Таблица сохранена в {excel_path}")
+    run()
