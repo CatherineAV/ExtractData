@@ -1,5 +1,6 @@
 import pdfplumber
 import pandas as pd
+from openpyxl.utils import get_column_letter
 import re
 import os
 import argparse
@@ -94,8 +95,12 @@ def get_values_in_range(min_value: str, max_value: str, e_values: list) -> list[
         factor = 10 ** n
         for value in e_values:
             e48_value = value * factor
-            if float(min_value) <= e48_value <= float(max_value):
-                results.append(format_number(e48_value))
+            if float(min_value) == 10 or float(min_value) == 1e6:
+                if float(min_value) < e48_value <= float(max_value):
+                    results.append(format_number(e48_value))
+            else:
+                if float(min_value) <= e48_value <= float(max_value):
+                    results.append(format_number(e48_value))
     return results
 
 
@@ -179,15 +184,15 @@ def add_to_list_new_data(table: list[list]) -> list[list]:
             item = ' '
         new_list.append(item)
 
-    formatted_data = []
+    updated_data = []
     for i, row in enumerate(table):
         replace_values = new_list[i]
         for value in replace_values:
             new_row = row[:]
             new_row.append(value)
-            formatted_data.append(new_row[:])
+            updated_data.append(new_row[:])
 
-    for row in formatted_data:
+    for row in updated_data:
         if float(row[-3]) < 1000:
             value = format_number(float(row[-3])) + ' Ом'
         elif 1000 <= float(row[-3]) < 1000000:
@@ -195,25 +200,58 @@ def add_to_list_new_data(table: list[list]) -> list[list]:
         elif float(row[-3]) >= 1000000:
             value = format_number(float(row[-3]) / 1000000) + ' МОм'
         row[-3] = value.replace('.', ',')
-    print(*formatted_data, sep='\n')
+
+    return updated_data
+
+
+def get_formatted_data(table: list[list]) -> list[list]:
+
+    table = add_to_list_new_data(table)
+    pattern = re.compile(r'(Р1-12)')
+    formatted_data = []
+
+    table = [['ОС', 'ШКАБ.434110.021 ТУ'] + row for row in table]
+    for row in table:
+        row[3] = ''.join([match.group(1) for match in [pattern.search(row[3])] if match])
+        formatted_row = [row[0], row[3], row[1], row[4], row[5] + ' В', row[7], row[8], row[9], row[2], row[6]]
+        formatted_data.append(formatted_row)
+    for row in formatted_data:
+        row.append(f"{row[0]} {row[1]} - {row[3]} - {row[5]} {row[6]}{' - ' + row[7] if row[7] != ' ' else ''}{' –'+ row[2]}")
 
     return formatted_data
 
 
 def save_data_to_excel(table: list[list], path_to_excel: str) -> None:
     with pd.ExcelWriter(path_to_excel, engine='openpyxl') as writer:
-        df = pd.DataFrame(table)
-        df.to_excel(writer, header=False, index=False)
+        df = pd.DataFrame(table, columns=[
+            'Категория качества', 'Тип', 'ТУ', 'Мощность', 'Напряжение',
+            'Сопротивление', 'Допуск', 'ТКС', 'Типоразмер', 'Масса', 'Полная запись'])
+        df.to_excel(writer, sheet_name='Резисторы', index=False)
+
+        worksheet = writer.sheets['Резисторы']
+        for i, col in enumerate(df.columns, 1):
+            max_length = max(df[col].astype(str).map(len).max(), len(col)) + 2
+            column_letter = get_column_letter(i)
+            worksheet.column_dimensions[column_letter].width = max_length
 
 
-if __name__ == "__main__":
+def run():
+    parser = argparse.ArgumentParser(description="Обработка PDF-файла (Резизторы) и вывод данных в Excel-таблицу")
+    parser.add_argument('-in', '--input', type=str, required=True, help="Путь к входному файлу PDF")
+    parser.add_argument('-out', '--output', type=str, default='resistors_data.xlsx', help="Имя выходного файла Excel")
 
-    pdf_path = "R1_12-SHKAB.434110.021TU.pdf"
-    excel_path = os.path.join(os.getcwd(), "data.xlsx")
+    args = parser.parse_args()
+
+    pdf_path = args.input
+    excel_path = os.path.join(os.getcwd(), args.output)
 
     data = get_data_from_pdf(pdf_path)
     transformed_data = transform_ranges(data)
     parsed_data = parse_data(transformed_data)
     deployed_data = deploy_data(parsed_data)
-    updated_data = add_to_list_new_data(deployed_data)
-    save_data_to_excel(updated_data, excel_path)
+    new_data = get_formatted_data(deployed_data)
+    save_data_to_excel(new_data, excel_path)
+
+
+if __name__ == "__main__":
+    run()
