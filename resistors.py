@@ -250,7 +250,9 @@ def run():
     parsed_data = parse_data(transformed_data)
     deployed_data = deploy_data(parsed_data)
     new_data = get_formatted_data(deployed_data)
+
     save_data_to_excel(new_data, excel_path)
+    print(f"Таблица сохранена по пути {excel_path}")
 
 
 if __name__ == "__main__":
