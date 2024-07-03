@@ -207,12 +207,14 @@ def add_to_list_new_data(table: list[list]) -> list[list]:
 def get_formatted_data(table: list[list]) -> list[list]:
 
     table = add_to_list_new_data(table)
-    pattern = re.compile(r'(Р1-12)')
+    pattern = re.compile(r'(Р1-12)(.*ум\.)?')
     formatted_data = []
 
     table = [['ОС', 'ШКАБ.434110.021 ТУ'] + row for row in table]
     for row in table:
-        row[3] = ''.join([match.group(1) for match in [pattern.search(row[3])] if match])
+        match = pattern.search(row[3])
+        if match:
+            row[3] = match.group(1) + ('' if not match.group(2) else ' ум.')
         formatted_row = [row[0], row[3], row[1], row[4], row[5] + ' В', row[7], row[8], row[9], row[2], row[6]]
         formatted_data.append(formatted_row)
     for row in formatted_data:
